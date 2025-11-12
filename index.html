@@ -109,7 +109,7 @@
         let recognition;
         let isListening = false;
         let finalTranscript = '';
-        let restartTimeout;
+        let isRestarting = false;
 
         // Check for browser support
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -120,10 +120,6 @@
             recognition.interimResults = true;
             recognition.lang = 'en-US';
             recognition.maxAlternatives = 1;
-
-            recognition.onstart = () => {
-                console.log('Recognition started');
-            };
 
             recognition.onresult = (event) => {
                 let interimTranscript = '';
@@ -142,49 +138,29 @@
             };
 
             recognition.onerror = (event) => {
-                console.log('Recognition error:', event.error);
-                if (event.error === 'no-speech') {
-                    // Just restart, this is normal
-                    if (isListening) {
-                        clearTimeout(restartTimeout);
-                        restartTimeout = setTimeout(() => {
-                            if (isListening) {
-                                recognition.start();
-                            }
-                        }, 100);
-                    }
-                } else if (event.error === 'aborted') {
-                    // Restart after abort
-                    if (isListening) {
-                        clearTimeout(restartTimeout);
-                        restartTimeout = setTimeout(() => {
-                            if (isListening) {
-                                recognition.start();
-                            }
-                        }, 100);
-                    }
+                if (event.error === 'no-speech' || event.error === 'aborted') {
+                    // These are normal, just restart
+                } else {
+                    console.log('Recognition error:', event.error);
                 }
             };
 
             recognition.onend = () => {
-                console.log('Recognition ended');
-                // Always restart if we should be listening
-                if (isListening) {
-                    clearTimeout(restartTimeout);
-                    restartTimeout = setTimeout(() => {
+                // Only restart if we should be listening AND not already restarting
+                if (isListening && !isRestarting) {
+                    isRestarting = true;
+                    setTimeout(() => {
                         if (isListening) {
                             try {
                                 recognition.start();
+                                isRestarting = false;
                             } catch (e) {
-                                console.log('Restart error:', e);
-                                setTimeout(() => {
-                                    if (isListening) {
-                                        recognition.start();
-                                    }
-                                }, 500);
+                                isRestarting = false;
                             }
+                        } else {
+                            isRestarting = false;
                         }
-                    }, 100);
+                    }, 300);
                 }
             };
 
@@ -196,7 +172,12 @@
         function startListening() {
             if (recognition && !isListening) {
                 isListening = true;
-                recognition.start();
+                isRestarting = false;
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.log('Start error:', e);
+                }
                 status.textContent = '● Listening';
                 status.className = 'status listening';
             }
@@ -205,8 +186,12 @@
         function stopListening() {
             if (recognition && isListening) {
                 isListening = false;
-                clearTimeout(restartTimeout);
-                recognition.stop();
+                isRestarting = false;
+                try {
+                    recognition.stop();
+                } catch (e) {
+                    console.log('Stop error:', e);
+                }
             }
         }
 
