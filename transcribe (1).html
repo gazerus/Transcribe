@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcribe</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: #fff;
+            padding: 20px;
+        }
+        #startScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #startScreen.hidden {
+            display: none;
+        }
+        #startBtn {
+            padding: 40px 80px;
+            font-size: 32px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        #transcript {
+            width: 100%;
+            min-height: calc(100vh - 100px);
+            padding: 15px;
+            font-size: 18px;
+            line-height: 1.6;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        #clearBtn {
+            background: #dc3545;
+            color: white;
+        }
+        #toggleBtn {
+            background: #dc3545;
+            color: white;
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: inline-block;
+            margin-left: auto;
+        }
+        .status.listening {
+            background: #d4edda;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <button id="startBtn">START</button>
+    </div>
+    
+    <div id="transcript" contenteditable="true"></div>
+    <div class="controls">
+        <button id="toggleBtn">STOP</button>
+        <button id="clearBtn">Clear All</button>
+        <span class="status listening" id="status">● Listening</span>
+    </div>
+
+    <script>
+        const startScreen = document.getElementById('startScreen');
+        const startBtnMain = document.getElementById('startBtn');
+        const transcript = document.getElementById('transcript');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const status = document.getElementById('status');
+
+        let recognition;
+        let isListening = false;
+        let finalTranscript = '';
+        let restartTimeout;
+
+        // Check for browser support
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                console.log('Recognition started');
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcriptPiece = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcriptPiece + ' ';
+                    } else {
+                        interimTranscript += transcriptPiece;
+                    }
+                }
+                
+                transcript.textContent = finalTranscript + interimTranscript;
+                transcript.scrollTop = transcript.scrollHeight;
+            };
+
+            recognition.onerror = (event) => {
+                console.log('Recognition error:', event.error);
+                if (event.error === 'no-speech') {
+                    // Just restart, this is normal
+                    if (isListening) {
+                        clearTimeout(restartTimeout);
+                        restartTimeout = setTimeout(() => {
+                            if (isListening) {
+                                recognition.start();
+                            }
+                        }, 100);
+                    }
+                } else if (event.error === 'aborted') {
+                    // Restart after abort
+                    if (isListening) {
+                        clearTimeout(restartTimeout);
+                        restartTimeout = setTimeout(() => {
+                            if (isListening) {
+                                recognition.start();
+                            }
+                        }, 100);
+                    }
+                }
+            };
+
+            recognition.onend = () => {
+                console.log('Recognition ended');
+                // Always restart if we should be listening
+                if (isListening) {
+                    clearTimeout(restartTimeout);
+                    restartTimeout = setTimeout(() => {
+                        if (isListening) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                console.log('Restart error:', e);
+                                setTimeout(() => {
+                                    if (isListening) {
+                                        recognition.start();
+                                    }
+                                }, 500);
+                            }
+                        }
+                    }, 100);
+                }
+            };
+
+        } else {
+            transcript.textContent = 'Speech recognition not supported. Use Chrome or Edge on Android.';
+            startBtnMain.disabled = true;
+        }
+
+        function startListening() {
+            if (recognition && !isListening) {
+                isListening = true;
+                recognition.start();
+                status.textContent = '● Listening';
+                status.className = 'status listening';
+            }
+        }
+
+        function stopListening() {
+            if (recognition && isListening) {
+                isListening = false;
+                clearTimeout(restartTimeout);
+                recognition.stop();
+            }
+        }
+
+        startBtnMain.addEventListener('click', () => {
+            startScreen.classList.add('hidden');
+            startListening();
+        });
+
+        toggleBtn.addEventListener('click', () => {
+            stopListening();
+            // Clear and go back to start screen
+            if (confirm('Stop recording and clear text?')) {
+                transcript.textContent = '';
+                finalTranscript = '';
+                startScreen.classList.remove('hidden');
+            } else {
+                // Restart if they don't want to clear
+                startListening();
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            if (confirm('Clear all text?')) {
+                transcript.textContent = '';
+                finalTranscript = '';
+            }
+        });
+    </script>
+</body>
+</html>
